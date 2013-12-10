@@ -7,7 +7,16 @@ import (
 	"time"
 )
 
-const maxPktLen = 1500
+var maxPktLen uint32 = 1280
+
+func getMaxPktLen() uint32, err {
+    return maxPktLen, nil
+}
+
+func setMaxPktLen(newlen uint32) uint32, err {
+    maxPktLen = newlen
+    return maxPktLen, nil
+}
 
 // Handle CoAP messages.
 type Handler interface {
