@@ -4,16 +4,16 @@ package coap
 import (
 	"log"
 	"net"
-	"time"
+    "time"
 )
 
 var maxPktLen uint32 = 1280
 
-func getMaxPktLen() uint32, err {
+func getMaxPktLen() (uint32, error) {
     return maxPktLen, nil
 }
 
-func setMaxPktLen(newlen uint32) uint32, err {
+func setMaxPktLen(newlen uint32) (uint32, error) {
     maxPktLen = newlen
     return maxPktLen, nil
 }
