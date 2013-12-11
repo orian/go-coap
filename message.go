@@ -45,7 +45,6 @@ const (
 	POST      COAPCode = 2
 	PUT       COAPCode = 3
 	DELETE    COAPCode = 4
-	SUBSCRIBE COAPCode = 5
 )
 
 // Response Codes
@@ -78,7 +77,6 @@ var codeNames = [256]string{
 	POST:                  "POST",
 	PUT:                   "PUT",
 	DELETE:                "DELETE",
-	SUBSCRIBE:             "SUBSCRIBE",
 	Created:               "Created",
 	Deleted:               "Deleted",
 	Valid:                 "Valid",
