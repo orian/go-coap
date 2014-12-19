@@ -502,10 +502,10 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 
 		switch optDelta {
 		case 13:
-			optDelta = decodeInt(b[:1]) - 13
+			optDelta = decodeInt(b[:1]) + 13
 			b = b[1:]
 		case 14:
-			optDelta = decodeInt(b[:2]) - 269
+			optDelta = decodeInt(b[:2]) + 269
 			b = b[2:]
 		case 15:
 			return ErrOptionLenDelta
@@ -513,10 +513,10 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 
 		switch optLen {
 		case 13:
-			optLen = decodeInt(b[:1]) - 13
+			optLen = decodeInt(b[:1]) + 13
 			b = b[1:]
 		case 14:
-			optLen = decodeInt(b[:2]) - 269
+			optLen = decodeInt(b[:2]) + 269
 			b = b[2:]
 		case 15:
 			return ErrOptionLenDelta

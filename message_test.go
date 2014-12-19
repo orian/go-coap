@@ -547,3 +547,31 @@ func TestExample1Res(t *testing.T) {
 		t.Errorf("Incorrect payload: %q", msg.Payload)
 	}
 }
+
+func TestSparkCoap(t *testing.T) {
+	data := []byte{80, 2, 122, 35, 177, 69, 13, 13, 115, 112, 97, 114, 107, 47, 99, 99, 51, 48, 48, 48, 45, 112, 97, 116, 99, 104, 45, 118, 101, 114, 115, 105, 111, 110, 255, 49, 46, 50, 56}
+	var msg Message
+	err := msg.UnmarshalBinary(data)
+	if err != nil {
+		t.Errorf("cannot unmarshal: %s", err)
+	}
+	if msg.MessageID != 31267 {
+		t.Errorf("MessageID want: %d, got: %d", 31267, msg.MessageID)
+	}
+	if msg.Type != NonConfirmable {
+		t.Errorf("Type want: %d, got: %d", NonConfirmable, msg.Type)
+	}
+	if msg.Code != POST {
+		t.Errorf("Code want: %d, got: %d", POST, msg.Code)
+	}
+	if len(msg.Token) != 0 {
+		t.Errorf("Token should be empty")
+	}
+	p := msg.Path()
+	if len(p) != 2 || p[0] != "E" || p[1] != "spark/cc3000-patch-version" {
+		t.Errorf("Wrong paths: %v", p)
+	}
+	//	if msg.Payload != []byte("1.28") {
+	//		t.Errorf("Wrong payload: %v", msg.Payload)
+	//	}
+}
