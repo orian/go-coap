@@ -2,10 +2,79 @@ package coap
 
 import (
 	"bytes"
+	"encoding"
 	"fmt"
 	"reflect"
 	"testing"
 )
+
+var (
+	_ = encoding.BinaryMarshaler(&Message{})
+	_ = encoding.BinaryUnmarshaler(&Message{})
+)
+
+func TestOptionToBytes(t *testing.T) {
+	tests := []struct {
+		in  interface{}
+		exp []byte
+	}{
+		{"", []byte{}},
+		{[]byte{}, []byte{}},
+		{"x", []byte{'x'}},
+		{[]byte{'x'}, []byte{'x'}},
+		{MediaType(3), []byte{0x3}},
+		{3, []byte{0x3}},
+		{838, []byte{0x3, 0x46}},
+		{int32(838), []byte{0x3, 0x46}},
+		{uint(838), []byte{0x3, 0x46}},
+		{uint32(838), []byte{0x3, 0x46}},
+	}
+
+	for _, test := range tests {
+		op := option{Value: test.in}
+		got := op.toBytes()
+		if !bytes.Equal(test.exp, got) {
+			t.Errorf("Error on %T(%v), got %#v, wanted %#v",
+				test.in, test.in, got, test.exp)
+		}
+	}
+}
+
+func TestMessageConfirmable(t *testing.T) {
+	tests := []struct {
+		m   Message
+		exp bool
+	}{
+		{Message{Type: Confirmable}, true},
+		{Message{Type: NonConfirmable}, false},
+	}
+
+	for _, test := range tests {
+		got := test.m.IsConfirmable()
+		if got != test.exp {
+			t.Errorf("Expected %v for %v", test.exp, test.m)
+		}
+	}
+}
+
+func TestMissingOption(t *testing.T) {
+	got := Message{}.Option(MaxAge)
+	if got != nil {
+		t.Errorf("Expected nil, got %v", got)
+	}
+}
+
+func TestOptionToBytesPanic(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err == nil {
+			t.Error("Expected panic. Didn't")
+		} else {
+			t.Logf("Got expected error: %v", err)
+		}
+	}()
+	option{Value: 3.1415926535897}.toBytes()
+}
 
 func TestTypeString(t *testing.T) {
 	tests := map[COAPType]string{
@@ -49,8 +118,8 @@ func TestEncodeMessageLargeOptionGap(t *testing.T) {
 	req.AddOption(ContentFormat, TextPlain)
 	req.AddOption(ProxyURI, "u")
 
-	_, err := req.encode()
-	if err != OptionGapTooLarge {
+	_, err := req.MarshalBinary()
+	if err != ErrOptionGapTooLarge {
 		t.Fatalf("Expected 'option gap too large', got: %v", err)
 	}
 }
@@ -65,7 +134,7 @@ func TestEncodeMessageSmall(t *testing.T) {
 	req.AddOption(ETag, []byte("weetag"))
 	req.AddOption(MaxAge, 3)
 
-	data, err := req.encode()
+	data, err := req.MarshalBinary()
 	if err != nil {
 		t.Fatalf("Error encoding request: %v", err)
 	}
@@ -91,7 +160,7 @@ func TestEncodeMessageSmallWithPayload(t *testing.T) {
 	req.AddOption(ETag, []byte("weetag"))
 	req.AddOption(MaxAge, 3)
 
-	data, err := req.encode()
+	data, err := req.MarshalBinary()
 	if err != nil {
 		t.Fatalf("Error encoding request: %v", err)
 	}
@@ -104,6 +173,23 @@ func TestEncodeMessageSmallWithPayload(t *testing.T) {
 	}
 	if !reflect.DeepEqual(exp, data) {
 		t.Fatalf("Expected\n%#v\ngot\n%#v", exp, data)
+	}
+}
+
+func TestInvalidMessageParsing(t *testing.T) {
+	msg, err := parseMessage(nil)
+	if err == nil {
+		t.Errorf("Unexpected success parsing short message: %v", msg)
+	}
+
+	msg, err = parseMessage([]byte{0xff, 0, 0, 0, 0, 0})
+	if err == nil {
+		t.Errorf("Unexpected success parsing invalid message: %v", msg)
+	}
+
+	msg, err = parseMessage([]byte{0x4f, 0, 0, 0, 0, 0})
+	if err == nil {
+		t.Errorf("Unexpected success parsing invalid message: %v", msg)
 	}
 }
 
@@ -142,7 +228,30 @@ func TestEncodeMessageVerySmall(t *testing.T) {
 	}
 	req.SetPathString("x")
 
-	data, err := req.encode()
+	data, err := req.MarshalBinary()
+	if err != nil {
+		t.Fatalf("Error encoding request: %v", err)
+	}
+
+	// Inspected by hand.
+	exp := []byte{
+		0x40, 0x1, 0x30, 0x39, 0xb1, 0x78,
+	}
+	if !reflect.DeepEqual(exp, data) {
+		t.Fatalf("Expected\n%#v\ngot\n%#v", exp, data)
+	}
+}
+
+// Same as above, but with a leading slash
+func TestEncodeMessageVerySmall2(t *testing.T) {
+	req := Message{
+		Type:      Confirmable,
+		Code:      GET,
+		MessageID: 12345,
+	}
+	req.SetPathString("/x")
+
+	data, err := req.MarshalBinary()
 	if err != nil {
 		t.Fatalf("Error encoding request: %v", err)
 	}
@@ -166,7 +275,7 @@ func TestEncodeSeveral(t *testing.T) {
 	for p, a := range tests {
 		m := &Message{Type: Confirmable, Code: GET, MessageID: 12345}
 		m.SetPathString(p)
-		b, err := (*m).encode()
+		b, err := m.MarshalBinary()
 		if err != nil {
 			t.Errorf("Error encoding %#v", p)
 			t.Fail()
@@ -184,6 +293,54 @@ func TestEncodeSeveral(t *testing.T) {
 	}
 }
 
+func TestEncodePath14(t *testing.T) {
+	req := Message{
+		Type:      Confirmable,
+		Code:      GET,
+		MessageID: 12345,
+	}
+	req.SetPathString("123456789ABCDE")
+
+	data, err := req.MarshalBinary()
+	if err != nil {
+		t.Fatalf("Error encoding request: %v", err)
+	}
+
+	// Inspected by hand.
+	exp := []byte{
+		0x40, 0x1, 0x30, 0x39, 0xbe,
+		'1', '2', '3', '4', '5', '6', '7', '8',
+		'9', 'A', 'B', 'C', 'D', 'E',
+	}
+	if !reflect.DeepEqual(exp, data) {
+		t.Fatalf("Expected\n%#v\ngot\n%#v", exp, data)
+	}
+}
+
+func TestEncodePath15(t *testing.T) {
+	req := Message{
+		Type:      Confirmable,
+		Code:      GET,
+		MessageID: 12345,
+	}
+	req.SetPathString("123456789ABCDEF")
+
+	data, err := req.MarshalBinary()
+	if err != nil {
+		t.Fatalf("Error encoding request: %v", err)
+	}
+
+	// Inspected by hand.
+	exp := []byte{
+		0x40, 0x1, 0x30, 0x39, 0xbf, 0x00,
+		'1', '2', '3', '4', '5', '6', '7', '8',
+		'9', 'A', 'B', 'C', 'D', 'E', 'F',
+	}
+	if !reflect.DeepEqual(exp, data) {
+		t.Fatalf("Expected\n%#v\ngot\n%#v", exp, data)
+	}
+}
+
 func TestEncodeLargePath(t *testing.T) {
 	req := Message{
 		Type:      Confirmable,
@@ -197,7 +354,7 @@ func TestEncodeLargePath(t *testing.T) {
 			req.PathString())
 	}
 
-	data, err := req.encode()
+	data, err := req.MarshalBinary()
 	if err != nil {
 		t.Fatalf("Error encoding request: %v", err)
 	}
@@ -235,13 +392,14 @@ func TestDecodeLargePath(t *testing.T) {
 		Type:      Confirmable,
 		Code:      GET,
 		MessageID: 12345,
+		Payload:   []byte{},
 	}
 
 	exp.SetOption(URIPath, path)
 
 	if fmt.Sprintf("%#v", exp) != fmt.Sprintf("%#v", req) {
-		b, _ := exp.encode()
-		t.Fatalf("Expected\n%#v\ngot\n%#v\nfor%#v", exp, req, b)
+		b, _ := exp.MarshalBinary()
+		t.Fatalf("Expected\n%#v\ngot\n%#v\nfor %#v", exp, req, b)
 	}
 }
 
@@ -260,6 +418,7 @@ func TestDecodeMessageSmaller(t *testing.T) {
 		Type:      Confirmable,
 		Code:      GET,
 		MessageID: 12345,
+		Payload:   []byte{},
 	}
 
 	exp.SetOption(ETag, []byte("weetag"))

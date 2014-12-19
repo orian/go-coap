@@ -1,4 +1,4 @@
-// CoAP Client and Server in Go
+// Package coap provides a CoAP client and server.
 package coap
 
 import (
@@ -18,7 +18,7 @@ func setMaxPktLen(newlen uint32) (uint32, error) {
     return maxPktLen, nil
 }
 
-// Handle CoAP messages.
+// Handler is a type that handles CoAP messages.
 type Handler interface {
 	// Handle the message and optionally return a response message.
 	ServeCOAP(l *net.UDPConn, a *net.UDPAddr, m *Message) *Message
@@ -30,7 +30,7 @@ func (f funcHandler) ServeCOAP(l *net.UDPConn, a *net.UDPAddr, m *Message) *Mess
 	return f(l, a, m)
 }
 
-// Build a handler from a function.
+// FuncHandler builds a handler from a function.
 func FuncHandler(f func(l *net.UDPConn, a *net.UDPAddr, m *Message) *Message) Handler {
 	return funcHandler(f)
 }
@@ -53,7 +53,7 @@ func handlePacket(l *net.UDPConn, data []byte, u *net.UDPAddr,
 
 // Transmit a message.
 func Transmit(l *net.UDPConn, a *net.UDPAddr, m Message) error {
-	d, err := m.encode()
+	d, err := m.MarshalBinary()
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func Transmit(l *net.UDPConn, a *net.UDPAddr, m Message) error {
 
 // Receive a message.
 func Receive(l *net.UDPConn, buf []byte) (Message, error) {
-	l.SetReadDeadline(time.Now().Add(RESPONSE_TIMEOUT))
+	l.SetReadDeadline(time.Now().Add(ResponseTimeout))
 
 	nr, _, err := l.ReadFromUDP(buf)
 	if err != nil {
@@ -77,7 +77,7 @@ func Receive(l *net.UDPConn, buf []byte) (Message, error) {
 	return parseMessage(buf[:nr])
 }
 
-// Bind to the given address and serve requests forever.
+// ListenAndServe binds to the given address and serve requests forever.
 func ListenAndServe(n, addr string, rh Handler) error {
 	uaddr, err := net.ResolveUDPAddr(n, addr)
 	if err != nil {
