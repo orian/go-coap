@@ -365,19 +365,19 @@ func (m *Message) encode() ([]byte, error) {
 	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	*/
 
-    tknlen := uint8(len(m.Token))
-    if (tknlen > 8) {
-        tknlen = 8
-    }
+	tknlen := uint8(len(m.Token))
+	if tknlen > 8 {
+		tknlen = 8
+	}
 
 	buf := bytes.Buffer{}
 	buf.Write([]byte{
-		(1 << 6) | (uint8(m.Type) << 4) | tknlen),
+		(1 << 6) | (uint8(m.Type) << 4) | tknlen,
 		byte(m.Code),
-		tmpbuf[0], tmpbuf[1],
+		tmpbuf[0],
+		tmpbuf[1],
 	})
 
-    
 	buf.Write(m.Token[:tknlen])
 
 	/*
@@ -444,11 +444,10 @@ func parseMessage(data []byte) (rv Message, err error) {
 	rv.MessageID = binary.BigEndian.Uint16(data[2:4])
 
 	b := data[4:]
-    
-    // Token
-    rv.Token = b[:tokenLen]
-    b = b[tokenLen:]
 
+	// Token
+	rv.Token = b[:tokenLen]
+	b = b[tokenLen:]
 
 	prev := 0
 	for len(b) > 0 {
