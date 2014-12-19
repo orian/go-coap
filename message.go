@@ -131,7 +131,8 @@ var (
 	ErrOptionTooLong     = errors.New("Option is too long")
 	ErrOptionTruncated   = errors.New("Option truncated")
 	ErrShortPacket       = errors.New("Short packet")
-	ErrTokenCopy         = errors.New("Problem copying token")
+	ErrTokenCopy         = errors.New("Problem copying Token")
+	ErrPayloadCopy       = errors.New("Problem copying Payload")
 )
 
 // OptionID identifies an option in a message.
@@ -483,11 +484,13 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 	b := data[4:]
 
 	// Token
-	m.Token = make([]byte, tokenLen)
-	if copy(m.Token, data[4:4+tokenLen]) != tokenLen {
-		return ErrTokenCopy
+	if tokenLen > 0 {
+		m.Token = make([]byte, tokenLen)
+		if copy(m.Token, b[:tokenLen]) != tokenLen {
+			return ErrTokenCopy
+		}
+		b = b[tokenLen:]
 	}
-	b = b[tokenLen:]
 
 	// Options
 	prevOptionId := 0
@@ -547,6 +550,12 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 		m.opts = append(m.opts, option)
 	}
 
-	m.Payload = b
+	// Payload
+	if payloadLen := len(b); payloadLen > 0 {
+		m.Payload = make([]byte, payloadLen)
+		if copy(m.Payload, b) != payloadLen {
+			return ErrPayloadCopy
+		}
+	}
 	return nil
 }
