@@ -15,4 +15,4 @@ Contains some preliminary work on `SUBSCRIBE` support from
  - merged all branches/forks which introduce any new fixes (token parsing, full standard implementation, some test)
  - fix minimum message length (according to protocol spec it's 4 bytes)
  - put all errors as constants
- - test are broken because the format has changed
+ - If msg had no Payload then Message.Payload is nil instead of a slice of size 0.

@@ -298,7 +298,7 @@ func TestEncodePath14(t *testing.T) {
 
 	// Inspected by hand.
 	exp := []byte{
-		0x40, 0x1, 0x30, 0x39, 0xbe,
+		0x40, 0x1, 0x30, 0x39, 0xbd, 0x1,
 		'1', '2', '3', '4', '5', '6', '7', '8',
 		'9', 'A', 'B', 'C', 'D', 'E',
 	}
@@ -322,7 +322,7 @@ func TestEncodePath15(t *testing.T) {
 
 	// Inspected by hand.
 	exp := []byte{
-		0x40, 0x1, 0x30, 0x39, 0xbf, 0x00,
+		0x40, 0x1, 0x30, 0x39, 0xbd, 0x2,
 		'1', '2', '3', '4', '5', '6', '7', '8',
 		'9', 'A', 'B', 'C', 'D', 'E', 'F',
 	}
@@ -351,7 +351,7 @@ func TestEncodeLargePath(t *testing.T) {
 
 	// Inspected by hand.
 	exp := []byte{
-		0x40, 0x1, 0x30, 0x39, 0xbf, 0x17, 0x74, 0x68, 0x69,
+		0x40, 0x1, 0x30, 0x39, 0xbd, 0x19, 0x74, 0x68, 0x69,
 		0x73, 0x5f, 0x70, 0x61, 0x74, 0x68, 0x5f, 0x69, 0x73,
 		0x5f, 0x6c, 0x6f, 0x6e, 0x67, 0x65, 0x72, 0x5f, 0x74,
 		0x68, 0x61, 0x6e, 0x5f, 0x66, 0x69, 0x66, 0x74, 0x65,
@@ -364,7 +364,7 @@ func TestEncodeLargePath(t *testing.T) {
 
 func TestDecodeLargePath(t *testing.T) {
 	data := []byte{
-		0x40, 0x1, 0x30, 0x39, 0xbf, 0x17, 0x74, 0x68,
+		0x40, 0x1, 0x30, 0x39, 0xbd, 0x19, 0x74, 0x68,
 		0x69, 0x73, 0x5f, 0x70, 0x61, 0x74, 0x68, 0x5f, 0x69, 0x73,
 		0x5f, 0x6c, 0x6f, 0x6e, 0x67, 0x65, 0x72, 0x5f, 0x74, 0x68,
 		0x61, 0x6e, 0x5f, 0x66, 0x69, 0x66, 0x74, 0x65, 0x65, 0x6e,
@@ -382,7 +382,6 @@ func TestDecodeLargePath(t *testing.T) {
 		Type:      Confirmable,
 		Code:      GET,
 		MessageID: 12345,
-		Payload:   []byte{},
 	}
 
 	exp.SetOption(URIPath, path)
@@ -408,7 +407,6 @@ func TestDecodeMessageSmaller(t *testing.T) {
 		Type:      Confirmable,
 		Code:      GET,
 		MessageID: 12345,
-		Payload:   []byte{},
 	}
 
 	exp.SetOption(ETag, []byte("weetag"))
@@ -574,4 +572,23 @@ func TestSparkCoap(t *testing.T) {
 	//	if msg.Payload != []byte("1.28") {
 	//		t.Errorf("Wrong payload: %v", msg.Payload)
 	//	}
+}
+
+func TestSparkPing(t *testing.T) {
+	data := []byte{64, 0, 122, 114}
+	var msg Message
+	err := msg.UnmarshalBinary(data)
+	if err != nil {
+		t.Errorf("cannot unmarshal: %s", err)
+	}
+	//	got CoAP msg 31346, code Unknown (0x0), type Confirmable
+	if msg.MessageID != 31346 {
+		t.Errorf("MessageID want: %d, got: %d", 31346, msg.MessageID)
+	}
+	if msg.Type != Confirmable {
+		t.Errorf("Type want: %d, got: %d", Confirmable, msg.Type)
+	}
+	if msg.Code != 0 {
+		t.Errorf("Code want: %d, got: %d", 0, msg.Code)
+	}
 }
