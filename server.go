@@ -4,10 +4,19 @@ package coap
 import (
 	"log"
 	"net"
-	"time"
+    "time"
 )
 
-const maxPktLen = 1500
+var maxPktLen uint32 = 1280
+
+func getMaxPktLen() (uint32, error) {
+    return maxPktLen, nil
+}
+
+func setMaxPktLen(newlen uint32) (uint32, error) {
+    maxPktLen = newlen
+    return maxPktLen, nil
+}
 
 // Handle CoAP messages.
 type Handler interface {

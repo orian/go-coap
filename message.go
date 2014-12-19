@@ -41,11 +41,10 @@ type COAPCode uint8
 
 // Request Codes
 const (
-	GET       COAPCode = 1
-	POST      COAPCode = 2
-	PUT       COAPCode = 3
-	DELETE    COAPCode = 4
-	SUBSCRIBE COAPCode = 5
+	GET    COAPCode = 1
+	POST   COAPCode = 2
+	PUT    COAPCode = 3
+	DELETE COAPCode = 4
 )
 
 // Response Codes
@@ -78,7 +77,6 @@ var codeNames = [256]string{
 	POST:                  "POST",
 	PUT:                   "PUT",
 	DELETE:                "DELETE",
-	SUBSCRIBE:             "SUBSCRIBE",
 	Created:               "Created",
 	Deleted:               "Deleted",
 	Valid:                 "Valid",
@@ -400,18 +398,36 @@ func (m *Message) encode() ([]byte, error) {
 	prev := 0
 	for _, o := range m.opts {
 		b := o.toBytes()
-		if len(b) > 15 {
-			buf.Write([]byte{
-				byte(int(o.ID)-prev)<<4 | 15,
-				byte(len(b) - 15),
-			})
+		optdelta := int(o.ID) - prev
+		optlen := len(b)
+
+		var optlenbytes []byte
+		if optlen >= 269 {
+			optlenbytes = encodeInt(uint32(optlen - 269))
+			optlen = 14
+		} else if optlen >= 13 {
+			optlenbytes = encodeInt(uint32(optlen - 13))
+			optlen = 13
 		} else {
-			buf.Write([]byte{byte(int(o.ID)-prev)<<4 | byte(len(b))})
-		}
-		if int(o.ID)-prev > 15 {
-			return nil, OptionGapTooLarge
+			optlenbytes = nil
 		}
 
+		var optdeltabytes []byte
+		if optlen >= 269 {
+			optdeltabytes = encodeInt(uint32(optdelta - 269))
+			optdelta = 14
+		} else if optlen >= 13 {
+			optdeltabytes = encodeInt(uint32(optdelta - 13))
+			optdelta = 13
+		} else {
+			optdeltabytes = nil
+		}
+
+		optdeltalenbyte := byte((optdelta << 4) + optlen)
+
+		buf.Write([]byte{optdeltalenbyte})
+		buf.Write(optdeltabytes)
+		buf.Write(optlenbytes)
 		buf.Write(b)
 		prev = int(o.ID)
 	}
@@ -435,7 +451,7 @@ func parseMessage(data []byte) (rv Message, err error) {
 	}
 
 	rv.Type = COAPType((data[0] >> 4) & 0x3)
-	tokenLen := int(data[0] & 0xf)
+	tokenLen := uint8(data[0] & 0xf)
 	if tokenLen > 8 {
 		return rv, InvalidTokenLen
 	}
@@ -449,37 +465,58 @@ func parseMessage(data []byte) (rv Message, err error) {
 	rv.Token = b[:tokenLen]
 	b = b[tokenLen:]
 
+	// Options
 	prev := 0
 	for len(b) > 0 {
-		if b[0] == 0xff {
-			b = b[1:]
-			break
-		}
-		oid := OptionID(prev + int(b[0]>>4))
-		l := int(b[0] & 0xf)
+		optLen := uint32(b[0] >> 4)
+		optDelta := uint32(b[0] & 0xf)
 		b = b[1:]
-		if l > 14 {
-			l += int(b[0])
+
+		if (optLen == 15) || (optDelta == 15) {
+			if (optLen == 15) && (optDelta == 15) {
+				break
+			} else {
+				return rv, errors.New("Invalid Option: Len xor Delta was 15")
+			}
+		}
+
+		if optDelta == 14 {
+			optDelta = decodeInt(b[:2]) - 269
+			b = b[2:]
+		} else if optDelta == 13 {
+			optDelta = decodeInt(b[:1]) - 13
 			b = b[1:]
 		}
-		if len(b) < l {
-			return rv, errors.New("Truncated")
+
+		if optLen == 14 {
+			optLen = decodeInt(b[:2]) - 269
+			b = b[2:]
+		} else if optLen == 13 {
+			optLen = decodeInt(b[:1]) - 13
+			b = b[1:]
 		}
-		var opval interface{} = b[:l]
+
+		if len(b) < int(optLen) {
+			return rv, errors.New("Truncated option")
+		}
+
+		var optVal interface{} = b[:optLen]
+
+		oid := OptionID(prev + int(optDelta))
 		switch oid {
 		case URIPort, ContentFormat, MaxAge, Accept, Size1:
-			opval = decodeInt(b[:l])
+			optVal = decodeInt(b[:optLen])
 		case URIHost, LocationPath, URIPath, URIQuery, LocationQuery,
 			ProxyURI, ProxyScheme:
-			opval = string(b[:l])
+			optVal = string(b[:optLen])
 		}
 
 		option := option{
 			ID:    oid,
-			Value: opval,
+			Value: optVal,
 		}
-		b = b[l:]
-		prev = int(option.ID)
+		b = b[optLen:]
+		prev = int(oid)
 
 		rv.opts = append(rv.opts, option)
 	}
