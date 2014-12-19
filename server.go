@@ -4,18 +4,18 @@ package coap
 import (
 	"log"
 	"net"
-    "time"
+	"time"
 )
 
 var maxPktLen uint32 = 1280
 
 func getMaxPktLen() (uint32, error) {
-    return maxPktLen, nil
+	return maxPktLen, nil
 }
 
 func setMaxPktLen(newlen uint32) (uint32, error) {
-    maxPktLen = newlen
-    return maxPktLen, nil
+	maxPktLen = newlen
+	return maxPktLen, nil
 }
 
 // Handler is a type that handles CoAP messages.
@@ -38,7 +38,8 @@ func FuncHandler(f func(l *net.UDPConn, a *net.UDPAddr, m *Message) *Message) Ha
 func handlePacket(l *net.UDPConn, data []byte, u *net.UDPAddr,
 	rh Handler) {
 
-	msg, err := parseMessage(data)
+	var msg Message
+	err := msg.UnmarshalBinary(data)
 	if err != nil {
 		log.Printf("Error parsing %v", err)
 		return
@@ -74,7 +75,9 @@ func Receive(l *net.UDPConn, buf []byte) (Message, error) {
 	if err != nil {
 		return Message{}, err
 	}
-	return parseMessage(buf[:nr])
+	var msg Message
+	err = msg.UnmarshalBinary(buf[:nr])
+	return msg, err
 }
 
 // ListenAndServe binds to the given address and serve requests forever.

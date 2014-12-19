@@ -13,6 +13,12 @@ var (
 	_ = encoding.BinaryUnmarshaler(&Message{})
 )
 
+func parseMessage(data []byte) (Message, error) {
+	var msg Message
+	err := msg.UnmarshalBinary(data)
+	return msg, err
+}
+
 func TestOptionToBytes(t *testing.T) {
 	tests := []struct {
 		in  interface{}
@@ -108,22 +114,6 @@ func TestCodeString(t *testing.T) {
 	}
 }
 
-func TestEncodeMessageLargeOptionGap(t *testing.T) {
-	req := Message{
-		Type:      Confirmable,
-		Code:      GET,
-		MessageID: 12345,
-	}
-
-	req.AddOption(ContentFormat, TextPlain)
-	req.AddOption(ProxyURI, "u")
-
-	_, err := req.MarshalBinary()
-	if err != ErrOptionGapTooLarge {
-		t.Fatalf("Expected 'option gap too large', got: %v", err)
-	}
-}
-
 func TestEncodeMessageSmall(t *testing.T) {
 	req := Message{
 		Type:      Confirmable,
@@ -195,8 +185,8 @@ func TestInvalidMessageParsing(t *testing.T) {
 
 func TestDecodeMessageSmallWithPayload(t *testing.T) {
 	input := []byte{
-		0x40, 0x1, 0x30, 0x39, 0x21, 0x3,
-		0x26, 0x77, 0x65, 0x65, 0x74, 0x61, 0x67,
+		0x40, 0x1, 0x30, 0x39,
+		0x21, 0x3, 0x26, 0x77, 0x65, 0x65, 0x74, 0x61, 0x67,
 		0xff, 'h', 'i',
 	}
 

@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const CoapVersion = 1
+
 // COAPType represents the message type.
 type COAPType uint8
 
@@ -123,12 +125,17 @@ func (c COAPCode) String() string {
 // Message encoding errors.
 var (
 	ErrInvalidTokenLen   = errors.New("Invalid token length")
-	ErrOptionTooLong     = errors.New("Option is too long")
+	ErrInvalidVersion    = errors.New("Invalid version of CoAP")
+	ErrOptionLenDelta    = errors.New("Invalid Option: Len==15 xor Delta==15")
 	ErrOptionGapTooLarge = errors.New("Option gap too large")
+	ErrOptionTooLong     = errors.New("Option is too long")
+	ErrOptionTruncated   = errors.New("Option truncated")
+	ErrShortPacket       = errors.New("Short packet")
+	ErrTokenCopy         = errors.New("Problem copying token")
 )
 
 // OptionID identifies an option in a message.
-type OptionID uint8
+type OptionID uint16
 
 /*
    +-----+----+---+---+---+----------------+--------+--------+---------+
@@ -362,8 +369,8 @@ func (m *Message) SetOption(opID OptionID, val interface{}) {
 
 // MarshalBinary produces the binary form of this Message.
 func (m *Message) MarshalBinary() ([]byte, error) {
-	tmpbuf := []byte{0, 0}
-	binary.BigEndian.PutUint16(tmpbuf, m.MessageID)
+	tmpBuf := []byte{0, 0}
+	binary.BigEndian.PutUint16(tmpBuf, m.MessageID)
 
 	/*
 	     0                   1                   2                   3
@@ -379,96 +386,93 @@ func (m *Message) MarshalBinary() ([]byte, error) {
 	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	*/
 
-	tknlen := uint8(len(m.Token))
-	if tknlen > 8 {
-		tknlen = 8
+	tknLen := uint8(len(m.Token))
+	// TODO this is dangerous, the response will have different token than request.
+	if tknLen > 8 {
+		tknLen = 8
 	}
 
 	buf := bytes.Buffer{}
 	buf.Write([]byte{
-		(1 << 6) | (uint8(m.Type) << 4) | tknlen,
+		(CoapVersion << 6) | (uint8(m.Type) << 4) | tknLen,
 		byte(m.Code),
-		tmpbuf[0],
-		tmpbuf[1],
+		tmpBuf[0],
+		tmpBuf[1],
 	})
 
-	buf.Write(m.Token[:tknlen])
+	buf.Write(m.Token[:tknLen])
 
 	/*
-	     0   1   2   3   4   5   6   7
-	   +---+---+---+---+---+---+---+---+
-	   | Option Delta  |    Length     | for 0..14
-	   +---+---+---+---+---+---+---+---+
-	   |   Option Value ...
-	   +---+---+---+---+---+---+---+---+
-	                                               for 15..270:
-	   +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-	   | Option Delta  | 1   1   1   1 |          Length - 15          |
-	   +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-	   |   Option Value ...
-	   +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+			   0   1   2   3   4   5   6   7
+		   +---------------+---------------+
+		   |  Option Delta | Option Length |   1 byte
+		   +---------------+---------------+
+		   |         Option Delta          |   0-2 bytes
+		   |          (extended)           |
+		   +-------------------------------+
+		   |         Option Length         |   0-2 bytes
+		   |          (extended)           |
+		   +-------------------------------+
+		   |         Option Value          |   0 or more bytes
+		   +-------------------------------+
 	*/
 
 	sort.Sort(&m.opts)
 
-	prev := 0
+	prevOptionID := 0
 	for _, o := range m.opts {
 		b := o.toBytes()
-		optdelta := int(o.ID) - prev
-		optlen := len(b)
+		optDelta := int(o.ID) - prevOptionID
+		optLen := len(b)
 
-		var optlenbytes []byte
-		if optlen >= 269 {
-			optlenbytes = encodeInt(uint32(optlen - 269))
-			optlen = 14
-		} else if optlen >= 13 {
-			optlenbytes = encodeInt(uint32(optlen - 13))
-			optlen = 13
-		} else {
-			optlenbytes = nil
+		var optDeltaBytes []byte
+		switch {
+		case optDelta >= 269:
+			optDeltaBytes = encodeInt(uint32(optDelta - 269))
+			optDelta = 14
+		case optLen >= 13:
+			optDeltaBytes = encodeInt(uint32(optDelta - 13))
+			optDelta = 13
 		}
 
-		var optdeltabytes []byte
-		if optlen >= 269 {
-			optdeltabytes = encodeInt(uint32(optdelta - 269))
-			optdelta = 14
-		} else if optlen >= 13 {
-			optdeltabytes = encodeInt(uint32(optdelta - 13))
-			optdelta = 13
-		} else {
-			optdeltabytes = nil
+		var optLenBytes []byte
+		switch {
+		case optLen >= 269:
+			optLenBytes = encodeInt(uint32(optLen - 269))
+			optLen = 14
+		case optLen >= 13:
+			optLenBytes = encodeInt(uint32(optLen - 13))
+			optLen = 13
 		}
 
-		optdeltalenbyte := byte((optdelta << 4) + optlen)
-
-		buf.Write([]byte{optdeltalenbyte})
-		buf.Write(optdeltabytes)
-		buf.Write(optlenbytes)
+		optDeltaLenByte := byte((optDelta << 4) + optLen)
+		buf.Write([]byte{optDeltaLenByte})
+		buf.Write(optDeltaBytes)
+		buf.Write(optLenBytes)
 		buf.Write(b)
-		prev = int(o.ID)
+		prevOptionID = int(o.ID)
 	}
 
 	if len(m.Payload) > 0 {
 		buf.Write([]byte{0xff})
+		buf.Write(m.Payload)
 	}
-
-	buf.Write(m.Payload)
 
 	return buf.Bytes(), nil
 }
 
 // UnmarshalBinary parses the given binary slice as a Message.
 func (m *Message) UnmarshalBinary(data []byte) error {
-	if len(data) < 6 {
-		return errors.New("Short packet")
+	if len(data) < 4 {
+		return ErrShortPacket
 	}
 
-	if data[0]>>6 != 1 {
-		return errors.New("Invalid version")
+	if version := data[0] >> 6; version != CoapVersion {
+		return ErrInvalidVersion
 	}
 
 	m.Type = COAPType((data[0] >> 4) & 0x3)
-	tokenLen := uint8(data[0] & 0xf)
+	tokenLen := int(data[0] & 0xf)
 	if tokenLen > 8 {
 		return ErrInvalidTokenLen
 	}
@@ -479,47 +483,51 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 	b := data[4:]
 
 	// Token
-	m.Token = b[:tokenLen]
+	m.Token = make([]byte, tokenLen)
+	if copy(m.Token, data[4:4+tokenLen]) != tokenLen {
+		return ErrTokenCopy
+	}
 	b = b[tokenLen:]
 
 	// Options
-	prev := 0
+	prevOptionId := 0
 	for len(b) > 0 {
+		if b[0] == 0xf { // This is a payload mark
+			break
+		}
 		optLen := uint32(b[0] >> 4)
 		optDelta := uint32(b[0] & 0xf)
 		b = b[1:]
 
-		if (optLen == 15) || (optDelta == 15) {
-			if (optLen == 15) && (optDelta == 15) {
-				break
-			} else {
-				return errors.New("Invalid Option: Len xor Delta was 15")
-			}
-		}
-
-		if optDelta == 14 {
-			optDelta = decodeInt(b[:2]) - 269
-			b = b[2:]
-		} else if optDelta == 13 {
+		switch optDelta {
+		case 13:
 			optDelta = decodeInt(b[:1]) - 13
 			b = b[1:]
+		case 14:
+			optDelta = decodeInt(b[:2]) - 269
+			b = b[2:]
+		case 15:
+			return ErrOptionLenDelta
 		}
 
-		if optLen == 14 {
-			optLen = decodeInt(b[:2]) - 269
-			b = b[2:]
-		} else if optLen == 13 {
+		switch optLen {
+		case 13:
 			optLen = decodeInt(b[:1]) - 13
 			b = b[1:]
+		case 14:
+			optLen = decodeInt(b[:2]) - 269
+			b = b[2:]
+		case 15:
+			return ErrOptionLenDelta
 		}
 
 		if len(b) < int(optLen) {
-			return errors.New("Truncated option")
+			return ErrOptionTruncated
 		}
 
 		var optVal interface{} = b[:optLen]
 
-		oid := OptionID(prev + int(optDelta))
+		oid := OptionID(prevOptionId + int(optDelta))
 		switch oid {
 		case URIPort, ContentFormat, MaxAge, Accept, Size1:
 			optVal = decodeInt(b[:optLen])
@@ -533,7 +541,7 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 			Value: optVal,
 		}
 		b = b[optLen:]
-		prev = int(oid)
+		prevOptionId = int(oid)
 
 		m.opts = append(m.opts, option)
 	}
