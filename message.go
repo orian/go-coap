@@ -492,11 +492,12 @@ func (m *Message) UnmarshalBinary(data []byte) error {
 	// Options
 	prevOptionId := 0
 	for len(b) > 0 {
-		if b[0] == 0xf { // This is a payload mark
+		if b[0] == 0xff { // This is a payload mark
+			b = b[1:]
 			break
 		}
-		optLen := uint32(b[0] >> 4)
-		optDelta := uint32(b[0] & 0xf)
+		optDelta := uint32(b[0] >> 4)
+		optLen := uint32(b[0] & 0xf)
 		b = b[1:]
 
 		switch optDelta {
