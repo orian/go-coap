@@ -431,7 +431,7 @@ func (m *Message) MarshalBinary() ([]byte, error) {
 		case optDelta >= 269:
 			optDeltaBytes = encodeInt(uint32(optDelta - 269))
 			optDelta = 14
-		case optLen >= 13:
+		case optDelta >= 13:
 			optDeltaBytes = encodeInt(uint32(optDelta - 13))
 			optDelta = 13
 		}
